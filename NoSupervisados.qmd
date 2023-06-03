@@ -1,0 +1,320 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(readr)
+library(e1071)
+library(caTools)
+library(caret)
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(DataExplorer)
+library(factoextra)
+
+```
+
+```{r}
+df_spam <- read.csv('spambase.data')
+attach(df_spam)
+```
+
+```{r}
+set.seed(163)
+
+for (i in c("X1"))
+{
+df_spam[[i]]<-as.factor(df_spam[[i]])}
+```
+
+```{r}
+# Identificar las columnas a normalizar
+columnas_norm <- setdiff(colnames(df_spam), "X1")
+
+# Realizar la normalización columna por columna
+datos_norm <- as.data.frame(scale(df_spam[, columnas_norm]))
+
+# Combinar la columna no normalizada con las columnas normalizadas
+spam_norm <- cbind(df_spam["X1"], datos_norm)
+```
+
+```{r}
+boxplot(datos_norm$X0.21)
+```
+
+```{r}
+dependiente <- df_spam[,58]
+independientes <- names(df_spam)[1:57]
+correlaciones_abs <- numeric(length(independientes))
+
+for (i in 1:length(independientes))
+  {
+  correlation <- cor(dependiente, df_spam[[independientes[i]]])
+  
+  correlaciones_abs[i] <- abs(correlation)
+}
+
+orden <- order(correlaciones_abs)
+
+for (i in orden) {
+  cat("Correlación (valor absoluto) entre", independientes[i], "y la variable dependiente:", correlaciones_abs[i], "\n")
+}
+```
+
+```{r}
+pca <- prcomp(datos_norm, scale = TRUE)
+pca
+
+
+# Obtener los valores de importancia de las variables
+importance <- pca$rotation[,1]  # Aquí se toma la primera componente principal, puedes ajustarlo según tus necesidades
+
+# Crear un gráfico de barras de los pesos de las variables
+barplot(importance, names.arg = colnames(datos_norm), las = 2, cex.names = 0.4, main = "Pesos de las variables en PCA")
+
+```
+
+```{r}
+library(FactoMineR)
+datos_norm_pca <- PCA(datos_norm, graph = FALSE)
+summary(datos_norm_pca)
+
+datos_norm_pca$var$contrib
+
+```
+
+```{r}
+fviz_pca_var(datos_norm_pca,
+col.var = "contrib",
+gradient.cols = c("#002bbb", "#bb2e00"),
+repel = TRUE)
+
+```
+
+```{r}
+fviz_pca_var(datos_norm_pca, col.var = "contrib",
+gradient.cols = c("#002bbb", "#bb2e00"),
+repel = TRUE,
+select.var = list(contrib=10))
+
+```
+
+```{r}
+fviz_contrib(datos_norm_pca,choice = "var", axes = 1,top=21)
+fviz_contrib(datos_norm_pca,choice = "var", axes = 2,top=21)
+
+```
+
+podemos observar a partir de todos los graficos anteriores, que las variables con mayor importancia son las que estan encima de la flecha roja, menos X0.42.
+
+```{r}
+fviz_eig(datos_norm_pca)
+
+```
+
+```{r}
+library(corrplot)
+plot_prcomp(datos_norm)
+
+```
+
+## K-means
+
+```{r}
+library(purrr)
+tot_withinss <- map_dbl(1:10, function(k){
+model <- kmeans(x = datos_norm, centers = k)
+model$tot.withinss
+})
+elbow_df <- data.frame(
+k = 1:10,
+tot_withinss = tot_withinss)
+
+head(elbow_df)
+
+```
+
+```{r}
+#plotting the elbow plot
+ggplot(elbow_df, aes(k, tot_withinss)) +
+geom_line() +
+scale_x_continuous(breaks = 1:10)
+
+```
+
+```{r}
+library(cluster)
+sil_width <- map_dbl(2:10, function(k){
+model <- pam(datos_norm, k = k)
+model$silinfo$avg.width
+})
+sil_df <- data.frame(
+k = 2:10,
+sil_width = sil_width)
+
+head(sil_df)
+```
+
+```{r}
+ggplot(sil_df, aes(k, sil_width)) +
+geom_line() +
+scale_x_continuous(breaks = 2:10) +
+labs(y = "Avg sil width")
+```
+
+```{r}
+set.seed(163)
+#Building a k-means model with a k of 3
+modelo_kmedia <- kmeans(datos_norm, center = 3)
+
+```
+
+```{r}
+#Extracting the vector of cluster assignment from the model
+clustering_clientes <- modelo_kmedia$cluster
+#Building the segment_df dataframe
+segment_df <- mutate(datos_norm, cluster = clustering_clientes)
+#Calculating the mean for each category
+count(segment_df, cluster)
+
+```
+
+```{r}
+df_spam_ns <- subset(df_spam, select = -X1)
+
+```
+
+```{r}
+#Adding the cluster variable to the original dataframe
+df_spam_ns <- cbind(df_spam_ns,cluster = segment_df$cluster)
+head(df, n = 4)
+
+```
+
+```{r}
+#confirming
+count(df_spam_ns, cluster)
+
+```
+
+```{r}
+library(ggplot2)
+
+df_spam_ns %>%
+  ggplot(aes(X0.23)) +
+  geom_histogram(color = "black", fill = "lightblue", bins = 20) +
+  facet_wrap(vars(cluster)) +
+  scale_x_continuous(limits = c(0, 5), breaks = seq(0, 5, 0.5)) + 
+  coord_cartesian(ylim = c(0,50))
+```
+
+```{r}
+  df_spam_ns %>%
+    ggplot(aes(X0.25)) +
+    geom_histogram(color = "black", fill = "lightblue", bins = 20) +
+    facet_wrap(vars(cluster)) +
+    scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.5)) + 
+    coord_cartesian(ylim = c(0,50)) 
+    
+```
+
+df_spam_ns %\>%
+
+ggplot(aes(X0.25)) +
+
+geom_histogram(color = "black", fill = "lightblue", bins = 20) +
+
+facet_wrap(vars(cluster)) +
+
+scale_x\_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.5)) +
+
+coord_cartesian(ylim = c(0,50)) +
+
+geom_vline(aes(xintercept=mean(X0.25)),color="blue", linetype="dashed", size = 1)
+
+```{r}
+df_spam_ns %>%
+  ggplot(aes(X0.31)) +
+  geom_histogram(color = "black", fill = "lightblue", bins = 20) +
+  facet_wrap(vars(cluster)) +
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.1)) + 
+  coord_cartesian(ylim = c(0,1000)) +
+  geom_vline(aes(xintercept=mean(X0.25)),color="blue", linetype="dashed", size = 1)
+```
+
+```{r}
+df_spam_ns %>%
+  ggplot(aes(X0.27)) +
+  geom_histogram(color = "black", fill = "lightblue", bins = 20) +
+  facet_wrap(vars(cluster)) +
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.5)) + 
+  coord_cartesian(ylim = c(0,50)) 
+```
+
+```{r}
+df_spam_ns %>%
+  ggplot(aes(X0.22)) +
+  geom_histogram(color = "black", fill = "lightblue", bins = 20) +
+  facet_wrap(vars(cluster)) +
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.5)) + 
+  coord_cartesian(ylim = c(0,50))
+```
+
+```{r}
+df_spam_ns %>%
+  ggplot(aes(X0.21)) +
+  geom_histogram(color = "black", fill = "lightblue", bins = 20) +
+  facet_wrap(vars(cluster)) +
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.5)) + 
+  coord_cartesian(ylim = c(0,50)) +
+  geom_vline(aes(xintercept=mean(X0.25)),color="blue", linetype="dashed", size = 1)
+```
+
+```{r}
+df_spam_ns %>%
+  ggplot(aes(X0.19)) +
+  geom_histogram(color = "black", fill = "lightblue", bins = 20) +
+  facet_wrap(vars(cluster)) +
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.5)) + 
+  coord_cartesian(ylim = c(0,50)) +
+  geom_vline(aes(xintercept=mean(X0.25)),color="blue", linetype="dashed", size = 1)
+```
+
+```{r}
+km1 <- ggplot(df_spam_ns,aes(X0.23,
+X0.25,color=factor(cluster))) +
+geom_point()
+km1
+```
+
+```{r}
+km2 <- ggplot(df_spam_ns,aes(X0.25,
+X0.27,color=factor(cluster))) +
+geom_point()
+km2
+```
+
+```{r}
+km3 <- ggplot(df_spam_ns,aes(X0.23,
+X0.19,color=factor(cluster))) +
+geom_point()
+km3
+```
+
+```{r}
+km4 <- ggplot(df_spam_ns,aes(X0.19,
+X0.27,color=factor(cluster))) +
+geom_point()
+km4
+```
+
+```{r}
+km2 <- ggplot(df_spam_ns,aes(X0.23,
+X0.45,color=factor(cluster))) +
+geom_point()
+km2
+```
